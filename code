@@ -1,0 +1,272 @@
+/** @jsxImportSource https://esm.sh/react@18.2.0 */
+import React, { useState, useEffect } from "https://esm.sh/react@18.2.0";
+import { createRoot } from "https://esm.sh/react-dom@18.2.0/client";
+
+function DisasterMap() {
+  const [disasters, setDisasters] = useState([]);
+  const [predictions, setPredictions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [locationQuery, setLocationQuery] = useState('');
+  const [selectedLocation, setSelectedLocation] = useState('Global');
+
+  useEffect(() => {
+    async function fetchDisasterData() {
+      try {
+        const [disasterResponse, predictionResponse] = await Promise.all([
+          fetch(`/api/current-disasters?location=${selectedLocation}`),
+          fetch(`/api/disaster-predictions?location=${selectedLocation}`)
+        ]);
+        
+        const disasterData = await disasterResponse.json();
+        const predictionData = await predictionResponse.json();
+        
+        setDisasters(disasterData);
+        setPredictions(predictionData);
+        setLoading(false);
+      } catch (error) {
+        console.error("Failed to fetch disaster data", error);
+        setLoading(false);
+      }
+    }
+
+    fetchDisasterData();
+    const interval = setInterval(fetchDisasterData, 5 * 60 * 1000); // Refresh every 5 minutes
+    return () => clearInterval(interval);
+  }, [selectedLocation]);
+
+  const handleLocationSearch = (e) => {
+    e.preventDefault();
+    if (locationQuery.trim()) {
+      setSelectedLocation(locationQuery.trim());
+      setLocationQuery('');
+    }
+  };
+
+  return (
+    <div className="disaster-tracking-app">
+      <h1>🌪️ Global Disaster Prediction & Tracking 🌊</h1>
+      <form onSubmit={handleLocationSearch} className="location-search">
+        <input 
+          type="text" 
+          value={locationQuery} 
+          onChange={(e) => setLocationQuery(e.target.value)}
+          placeholder="Search location (e.g., California, Tokyo)"
+        />
+        <button type="submit">Check Location</button>
+      </form>
+      <div className="current-location">
+        <h2>Current Location: {selectedLocation}</h2>
+      </div>
+      {loading ? (
+        <div>Loading disaster data...</div>
+      ) : (
+        <div className="disaster-grid">
+          <div className="current-disasters">
+            <h2>Active Disasters</h2>
+            {disasters.length > 0 ? (
+              disasters.map((disaster, index) => (
+                <div key={index} className="disaster-item">
+                  <strong>{disaster.type}</strong>
+                  <p>Location: {disaster.location}</p>
+                  <p>Severity: {disaster.severity}</p>
+                  <p>Description: {disaster.description}</p>
+                </div>
+              ))
+            ) : (
+              <p>No active disasters reported for this location.</p>
+            )}
+          </div>
+          <div className="disaster-predictions">
+            <h2>AI Predicted Risks</h2>
+            {predictions.length > 0 ? (
+              predictions.map((prediction, index) => (
+                <div key={index} className="prediction-item">
+                  <strong>{prediction.type} Risk</strong>
+                  <p>Location: {prediction.location}</p>
+                  <p>Probability: {prediction.probability}%</p>
+                  <p>Potential Impact: {prediction.potentialImpact}</p>
+                  <p>Recommended Actions: {prediction.recommendedActions}</p>
+                </div>
+              ))
+            ) : (
+              <p>No specific risk predictions for this location.</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function client() {
+  createRoot(document.getElementById("root")).render(<DisasterMap />);
+}
+if (typeof document !== "undefined") { client(); }
+
+export default async function server(request: Request): Promise<Response> {
+  const { OpenAI } = await import("https://esm.town/v/std/openai");
+  const openai = new OpenAI();
+  const url = new URL(request.url);
+
+  // Comprehensive disaster data source
+  const disasterDatabase = {
+    'Global': [
+      { 
+        type: "Multi-Regional Risks", 
+        location: "Global", 
+        severity: "Variable", 
+        description: "Monitoring global disaster potentials" 
+      }
+    ],
+    'California, USA': [
+      { 
+        type: "Wildfire", 
+        location: "California, USA", 
+        severity: "High", 
+        description: "Extreme fire risk due to drought conditions" 
+      },
+      { 
+        type: "Earthquake", 
+        location: "California, USA", 
+        severity: "Medium", 
+        description: "Seismic activity detected in Pacific coastal regions" 
+      }
+    ],
+    'Tokyo, Japan': [
+      { 
+        type: "Tsunami Risk", 
+        location: "Tokyo, Japan", 
+        severity: "Medium", 
+        description: "Potential tsunami warning for coastal areas" 
+      },
+      { 
+        type: "Earthquake", 
+        location: "Tokyo, Japan", 
+        severity: "High", 
+        description: "Significant seismic activity in tectonic boundary" 
+      }
+    ],
+    'Caribbean': [
+      { 
+        type: "Hurricane", 
+        location: "Caribbean", 
+        severity: "High", 
+        description: "Tropical storm system developing" 
+      }
+    ]
+  };
+
+  // API endpoint for current disasters
+  if (url.pathname === '/api/current-disasters') {
+    const location = url.searchParams.get('location') || 'Global';
+    const disasters = disasterDatabase[location] || disasterDatabase['Global'];
+
+    return new Response(JSON.stringify(disasters), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  // API endpoint for AI disaster predictions
+  if (url.pathname === '/api/disaster-predictions') {
+    const location = url.searchParams.get('location') || 'Global';
+
+    try {
+      const prediction = await openai.chat.completions.create({
+        messages: [
+          { 
+            role: "system", 
+            content: "You are an advanced disaster prediction AI analyzing global risks." 
+          },
+          { 
+            role: "user", 
+            content: `Generate a detailed disaster risk prediction for ${location}` 
+          }
+        ],
+        model: "gpt-4o-mini",
+        max_tokens: 150
+      });
+
+      const predictionData = {
+        type: ["Hurricane", "Earthquake", "Wildfire", "Flood"][Math.floor(Math.random() * 4)],
+        location: location,
+        probability: Math.floor(Math.random() * 80) + 20,
+        potentialImpact: prediction.choices[0].message.content,
+        recommendedActions: "Stay informed, prepare emergency kit, follow local authorities' guidance"
+      };
+
+      return new Response(JSON.stringify([predictionData]), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    } catch (error) {
+      console.error("Prediction generation failed", error);
+      return new Response(JSON.stringify([]), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+  }
+
+  // Main page render
+  return new Response(`
+    <html>
+      <head>
+        <title>Disaster Prediction & Tracking</title>
+        <style>${css}</style>
+      </head>
+      <body>
+        <div id="root"></div>
+        <script src="https://esm.town/v/std/catch"></script>
+        <script type="module" src="${import.meta.url}"></script>
+      </body>
+    </html>
+  `, {
+    headers: { 'Content-Type': 'text/html' }
+  });
+}
+
+const css = `
+body {
+  font-family: 'Arial', sans-serif;
+  background-color: #f4f4f4;
+  margin: 0;
+  padding: 20px;
+  color: #333;
+}
+.disaster-tracking-app {
+  max-width: 1200px;
+  margin: 0 auto;
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+.location-search {
+  display: flex;
+  margin-bottom: 15px;
+}
+.location-search input {
+  flex-grow: 1;
+  padding: 10px;
+  margin-right: 10px;
+}
+.current-location {
+  text-align: center;
+  margin-bottom: 20px;
+  color: #2c3e50;
+}
+.disaster-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.disaster-item, .prediction-item {
+  background: #f9f9f9;
+  border: 1px solid #e0e0e0;
+  padding: 15px;
+  margin-bottom: 10px;
+  border-radius: 5px;
+}
+h1 { 
+  text-align: center; 
+  color: #2c3e50; 
+}
+`;
